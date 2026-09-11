@@ -1,0 +1,3 @@
+List of sensors for this project and what they do
+1. ESP32 - Central hub of the project and the place where all sensors connect
+
