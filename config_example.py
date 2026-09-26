@@ -1,0 +1,2 @@
+AIO_USER = "<AIO_USER>"
+AIO_KEY = "<AIO_KEY>"
