@@ -5,4 +5,5 @@ Claude outputs/
 CLAUDE.md
 __pycache__/
 *.swp
+index.html
 .DS_Store
