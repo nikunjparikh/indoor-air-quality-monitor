@@ -2,4 +2,4 @@ List of sensors for this project and what they do
 1. ESP32 - Central hub of the project and the place where all sensors connect
 2. SCD41 breakout board — must be SCD41, not SCD40 (SCD40 caps at 2,000 ppm). Pins pre-soldered. ~$25–40.
 3. Breadboard, half-size — ~$3.
-4. OLED display optional after initial build is done. 
+4. 0.96" I2C OLED, 128×64, SSD1306, 4-pin (VCC, GND, SCL, SDA)
