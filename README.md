@@ -130,19 +130,32 @@ python3 fix_old_readings.py "2026-09-26 21:27" --apply
 
 In **I-feel** mode, a Gree AC controls the temperature using a thermometer inside the remote, not the one in the AC unit. The remote sends its reading every 10 minutes.
 
-**Setup (26 Sep 2026):**
+**Answer: yes, as long as the AC can see the remote.** When it can't, the AC cools to about 20–21°C whatever the setting.
 
-- AC set to 22°C.
-- The SCD41 and a Garmin watch placed right next to the remote.
-- AC on from about 14:45 to 18:45.
+### Test 1: 26 Sep, set to 22°C, sensor next to the remote
 
-**What happened:**
+- The AC was on from about 14:45 to 18:45, with the SCD41 and a Garmin watch placed right next to the remote.
+- It settled into a steady on/off rhythm: about 20 minutes of cooling, then 30–40 minutes of coasting.
+- Cooling restarted when the SCD41 read 22.2–22.8°C, right at the setting. By the watch, the air near the remote stayed at about 20–23°C, averaging 21.6°C.
+- The SCD41 swung further (about 6°C) than the watch (about 3°C). The sensor is tiny and was catching the cold blasts directly, while the watch is heavy and slow to change. The SCD41's lowest points (about 16.9°C) were the blast itself, not the room.
 
-- A steady on/off rhythm: about 20 minutes of cooling, then 30–40 minutes of coasting.
-- By the watch, cooling restarted at about 22–23°C and stopped at about 20–21°C, averaging 21.6°C. That's roughly ±1°C around the 22°C setting, measured at the remote. This is what you'd expect if I-feel is working.
-- The SCD41 swung much further (about 6°C) than the watch (about 3°C). The sensor is tiny and reacts within seconds to blasts of cold air; the watch is heavy and slow to warm or cool.
+### Night of 26–27 Sep, set to 26°C, remote under a pillow
 
-**Not proven yet.** The AC's own thermometer could produce a similar result if the room air is well mixed. The deciding test: once the cooling has stopped, warm only the remote in your hand for 10–15 minutes. If the cooling comes back on early, the AC is following the remote. Then repeat with I-feel off, when it shouldn't react.
+- The pillow blocked the remote's signal and also warmed the remote.
+- The room still settled at about 19.5°C, far below 26°C.
+
+### Test 2: 27 Sep, set to 26°C, remote in view and then hidden
+
+- The setting stayed at 26°C the whole time.
+- 11:30–13:30, remote in view: the room was already about 24.8°C, below the setting. After a short cooling burst at start-up, the AC barely cooled for two hours, and the room drifted up to about 25°C. That's correct I-feel behaviour.
+- 13:30–15:30, remote in a closed drawer, which blocks the signal without warming the remote: cooling started within about 5–10 minutes. The room was pulled down to 20.4–21.5°C and cycled there.
+- The Garmin and the SCD41 agreed within about 0.5–1°C throughout.
+
+### What it means
+
+- **Keep the remote where the AC can see it.** Under a pillow, or anywhere else it's hidden, I-feel stops working.
+- **Without the remote's signal, the AC seems to fall back to a built-in temperature of its own**, about 20–21°C, rather than holding your setting with its own thermometer. For its own thermometer to explain these results, it would have to read about 5°C higher than the room, which is unlikely. To confirm it: with the remote hidden, change the setting. If the room doesn't follow, it's a fixed fallback.
+- **26°C with I-feel can feel muggy.** The AC barely runs, so it doesn't dry the air: humidity sat at about 87%. When the AC ran properly, humidity dropped to 42–60%.
 
 ## Known issues and next steps
 
