@@ -1,9 +1,10 @@
 import time, network, urequests, gc
-from machine import Pin, SoftI2C, WDT
+from machine import Pin, SoftI2C, WDT, reset_cause, WDT_RESET, PWRON_RESET
 import secrets
 # ---- config ----
 INTERVAL = 60                  # seconds between readings
 ADDR = 0x62                  # from i2c.scan()
+HIGH, RESET = 1000, 800        # CO2 alert above HIGH; re-arm once it drops below RESET
 # ---- hardware ----
 i2c = SoftI2C(scl=Pin(22), sda=Pin(21), freq=50000)
 # ---- watchdog ----
@@ -14,7 +15,7 @@ i2c = SoftI2C(scl=Pin(22), sda=Pin(21), freq=50000)
 wdt = WDT(timeout=60000)        # milliseconds
 def sleep_fed(seconds):
     # A normal sleep, but we tap the watchdog once a second so it
-    # doesn't reboot us during the ordinary 10-minute wait.
+    # doesn't reboot us during the ordinary wait between readings.
     for _ in range(seconds):
         wdt.feed()
         time.sleep(1)
@@ -80,21 +81,48 @@ def push(feed, value):
     except Exception as e:
         print("push failed:", feed, e)
         return False
+# ---- telegram ----
+def send_telegram(text):
+    # Same pattern as push(): returns True if Telegram accepted the message,
+    # False if anything went wrong, and never crashes the loop.
+    url = "https://api.telegram.org/bot" + secrets.TOKEN + "/sendMessage"
+    try:
+        wdt.feed()             # each secure send takes a few seconds; reset the countdown first
+        r = urequests.post(url, json={"chat_id": secrets.CHAT_ID, "text": text})
+        ok = r.status_code < 300
+        if not ok:
+            print("telegram rejected:", r.status_code, r.text)
+        r.close()
+        return ok
+    except Exception as e:
+        print("telegram failed:", e)
+        return False
 # ---- main loop ----
 print("logger starting")
 sensor_start()
 sleep_fed(35)        # first low-power result takes ~30s
+alerted = False      # have we already warned about the current CO2 spike?
+
+reasons = {WDT_RESET: "watchdog restart (it had frozen)",
+           PWRON_RESET: "power on"}
+why = reasons.get(reset_cause(), "other restart")
+
+if wifi_connect():
+    send_telegram("Air monitor started: " + why)
 
 while True:
+    gc.collect()
+    mem = gc.mem_free()
     wdt.feed()
-    # Read each sensor on its own, so if one fails (loose cable, etc.)
-    # we still keep the other one's reading for this cycle.
+    # Take a reading. If it fails (loose cable, etc.) we carry on
+    # and simply try again next cycle.
     co2 = temp = hum =  None
     try:
         co2, temp, hum  = reading()
         print("CO2 %d ppm   %.1f C   %.0f%%RH" % (co2, temp, hum))
     except Exception as e:
         print("Read failed:", e)
+
     # Send whatever we managed to read.
     try:
         if wifi_connect():
@@ -105,9 +133,21 @@ while True:
                 push("air-quality-monitor.temp-ind", temp)
             if hum is not None:
                 push("air-quality-monitor.hum-ind", hum)
+            push("air-quality-monitor.mem-free",mem)
+
+            # ---- CO2 alert ----
+            # Only change 'alerted' if the message actually went out,
+            # so a failed send gets retried next cycle instead of lost.
+            if co2 is not None:
+                if co2 > HIGH and not alerted:
+                    if send_telegram("CO2 high: %d ppm, open a window" % co2):
+                        alerted = True
+                elif co2 < RESET and alerted:
+                    if send_telegram("CO2 back to normal: %d ppm" % co2):
+                        alerted = False
         else:
             print("no wifi this cycle")
     except Exception as e:
         print("send failed:", e)
     gc.collect()               # tidy up memory so it doesn't get fragmented over days
-    sleep_fed(INTERVAL)        # 10-minute wait, feeding the watchdog throughout
+    sleep_fed(INTERVAL)        # wait between readings, feeding the watchdog throughout
