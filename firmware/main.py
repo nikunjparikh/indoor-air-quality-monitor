@@ -1,10 +1,13 @@
-import time, network, urequests, gc
+import time, network, urequests, gc, ntptime
 from machine import Pin, SoftI2C, WDT, reset_cause, WDT_RESET, PWRON_RESET
 import secrets
 # ---- config ----
 INTERVAL = 60                  # seconds between readings
 ADDR = 0x62                  # from i2c.scan()
-HIGH, RESET = 1000, 800        # CO2 alert above HIGH; re-arm once it drops below RESET
+LEVELS = [1000, 1200, 1500, 2000]  #CO2 levels to send alerts; RESET to stop alerts
+RESET = 800
+NIGHT_START, NIGHT_END = 22, 7   # night = 10 pm to 7 am; summary arrives just after 7
+TZ = 7 * 3600                    # Thailand is 7 hours (in seconds) ahead of UTC
 # ---- hardware ----
 i2c = SoftI2C(scl=Pin(22), sda=Pin(21), freq=50000)
 # ---- watchdog ----
@@ -97,19 +100,35 @@ def send_telegram(text):
     except Exception as e:
         print("telegram failed:", e)
         return False
-# ---- main loop ----
+# ---- clock ----
+def sync_clock():
+    try:
+        ntptime.settime()   # ask the internet for the time and set the ESP32's clock
+        return True
+    except Exception as e:
+        print("clock sync failed:", e)
+        return False
+
+# ---- start-up (runs once) ----
 print("logger starting")
 sensor_start()
 sleep_fed(35)        # first low-power result takes ~30s
-alerted = False      # have we already warned about the current CO2 spike?
-
+last_level = 0      # start the level from zero
+clock_ok = False    # until the clock is set, the ESP32 thinks it's the year 2000
 reasons = {WDT_RESET: "watchdog restart (it had frozen)",
            PWRON_RESET: "power on"}
 why = reasons.get(reset_cause(), "other restart")
 
 if wifi_connect():
     send_telegram("Air monitor started: " + why)
+    clock_ok = sync_clock()
 
+# night numbers for the morning summary
+night_peak = night_total = night_count = night_high = 0
+night_peak_time = ""
+is_night = False
+
+# ---- main loop (runs every minute, forever) ----
 while True:
     gc.collect()
     mem = gc.mem_free()
@@ -123,10 +142,28 @@ while True:
     except Exception as e:
         print("Read failed:", e)
 
+    # ---- night numbers ----
+    # Doesn't need WiFi, so readings still count if WiFi drops overnight.
+    if clock_ok:
+        now = time.localtime(time.time() + TZ)
+        hour, minute = now[3], now[4]
+        print("time %d:%02d" % (hour, minute))   # TEMPORARY: check this matches your phone, then delete
+        is_night = hour >= NIGHT_START or hour < NIGHT_END
+        if is_night and co2 is not None:
+            night_total += co2
+            night_count += 1
+            if co2 >= 1000:
+                night_high += 1
+            if co2 > night_peak:
+                night_peak = co2
+                night_peak_time = "%d:%02d" % (hour, minute)
+
     # Send whatever we managed to read.
     try:
         if wifi_connect():
             wdt.feed()
+            if not clock_ok:                 # retry if the clock wasn't set at start-up
+                clock_ok = sync_clock()
             if co2 is not None:
                 push("air-quality-monitor.co2-ind", co2)
             if temp is not None:
@@ -136,18 +173,30 @@ while True:
             push("air-quality-monitor.mem-free",mem)
 
             # ---- CO2 alert ----
-            # Only change 'alerted' if the message actually went out,
-            # so a failed send gets retried next cycle instead of lost.
+            # Send CO2 alerts at different levels of CO2
             if co2 is not None:
-                if co2 > HIGH and not alerted:
-                    if send_telegram("CO2 high: %d ppm, open a window" % co2):
-                        alerted = True
-                elif co2 < RESET and alerted:
+                level = 0
+                for step in LEVELS:
+                    if co2 >= step:
+                        level = step
+                if level > last_level:
+                    if send_telegram("CO2 passed %d ppm (now %d), open a window" % (level,co2)):
+                        last_level = level
+                elif co2 < RESET and last_level > 0:
                     if send_telegram("CO2 back to normal: %d ppm" % co2):
-                        alerted = False
+                        last_level = 0
+
+            # ---- morning summary ----
+            # Night numbers exist and it's no longer night = it's morning, so send.
+            # If the send fails, it simply tries again next minute.
+            if night_count > 0 and not is_night:
+                msg = "Last night: peak %d ppm at %s, average %d ppm, about %d min above 1000" % (
+                    night_peak, night_peak_time, int(night_total / night_count), night_high)
+                if send_telegram(msg):
+                    night_peak = night_total = night_count = night_high = 0
+                    sync_clock()   # re-check the time once a day so the clock doesn't drift
         else:
             print("no wifi this cycle")
     except Exception as e:
         print("send failed:", e)
-    gc.collect()               # tidy up memory so it doesn't get fragmented over days
     sleep_fed(INTERVAL)        # wait between readings, feeding the watchdog throughout
