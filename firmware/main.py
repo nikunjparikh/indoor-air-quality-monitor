@@ -9,7 +9,7 @@ RESET = 800
 PM_LEVELS = [35, 55, 125]        # PM2.5 alert levels (ug/m3), from the US EPA's health bands
 PM_RESET = 15                    # PM2.5 'back to normal' below this (WHO's 24-hour guideline)
 PM_AVG_N = 5                     # PM2.5 alerts use the average of the last 5 readings
-PM_FEED = "air-quality-monitor.pm-25"   # check this matches the feed's key on Adafruit
+PM_FEED = "air-quality-monitor.pm2-dot-5"   # check this matches the feed's key on Adafruit
 NIGHT_START, NIGHT_END = 22, 7   # night = 10 pm to 7 am; summary arrives just after 7
 TZ = 7 * 3600                    # Thailand is 7 hours (in seconds) ahead of UTC
 # ---- hardware ----
